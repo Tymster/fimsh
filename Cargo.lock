@@ -779,6 +779,7 @@ dependencies = [
  "async-std",
  "dotenv",
  "mongodb",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "tide",
