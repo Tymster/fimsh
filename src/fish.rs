@@ -4,12 +4,11 @@ use mongodb::bson::Document;
 use rand;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use uuid;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Fish {
-    id: u32,
-    rating: i32,
-    name: String,
+    pub id: u32,
+    pub rating: i32,
+    pub name: String,
 }
 impl Fish {
     pub async fn grr(collection: &mongodb::Collection<Document>) -> std::io::Result<()> {
