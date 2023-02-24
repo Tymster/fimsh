@@ -7,7 +7,7 @@ use mongodb::options::FindOptions;
 use mongodb::{bson::doc, Client};
 use tide::prelude::*;
 use tide::security::CorsMiddleware;
-use tide::Request;
+use tide::{Request, StatusCode};
 use tokio;
 #[derive(Clone)]
 struct Fishes {
@@ -16,18 +16,17 @@ struct Fishes {
 
 impl Fishes {
     pub async fn connect() -> Result<Self, mongodb::error::Error> {
-        let client = Client::with_uri_str("mongodb://localhost:27017")
-            .await
-            .unwrap();
-
-        Ok(Self {
-            collection: client.database("fish").collection::<Document>("fish"),
+        Ok(Fishes {
+            collection: Client::with_uri_str("mongodb://localhost:27017")
+                .await?
+                .database("fish")
+                .collection::<Document>("fish"),
         })
     }
     pub async fn fish_update(mut req: Request<Fishes>) -> tide::Result {
-        println!("Updating fish");
         let update: FishUpdate = req.body_json().await.unwrap();
-        req.state()
+        let status = match req
+            .state()
             .collection
             .find_one_and_update(
                 doc! {
@@ -40,22 +39,25 @@ impl Fishes {
                 },
                 None,
             )
-            .await
-            .unwrap()
-            .unwrap();
-        Ok(Fishes::new(req).await.unwrap())
+            .await?
+        {
+            None => StatusCode::NotFound,
+            _ => StatusCode::Ok,
+        };
+        let mut grr = tide::Response::from(Fishes::new(req).await?);
+        grr.set_status(status);
+        Ok(grr.into())
     }
     async fn new(req: Request<Fishes>) -> tide::Result {
         let x = req
             .state()
             .collection
             .aggregate(vec![doc! {"$sample": {"size": 1}}], None)
-            .await
-            .unwrap()
+            .await?
             .collect::<Vec<Result<_, mongodb::error::Error>>>()
             .await;
-        let fish: Fish = from_document(x[0].clone().unwrap()).unwrap();
-        Ok(serde_json::to_string(&fish).unwrap().into())
+        let fish: Fish = from_document(x[0].clone()?)?;
+        Ok(serde_json::to_string(&fish)?.into())
     }
     async fn top(req: Request<Fishes>) -> tide::Result {
         let r = req
@@ -68,15 +70,14 @@ impl Fishes {
                     .limit(req.param("n").unwrap().parse::<i64>().unwrap())
                     .build(),
             )
-            .await
-            .unwrap()
+            .await?
             .collect::<Vec<Result<_, mongodb::error::Error>>>()
             .await;
         let fishes: Vec<Fish> = r
             .iter()
             .map(|f| from_document(f.clone().unwrap()).unwrap())
             .collect();
-        Ok(serde_json::to_string(&fishes).unwrap().into())
+        Ok(serde_json::to_string(&fishes)?.into())
     }
 }
 #[derive(Serialize, Deserialize, Debug)]
@@ -85,12 +86,15 @@ struct FishUpdate {
 }
 #[tokio::main]
 async fn main() -> tide::Result<()> {
+    let mut port = String::new();
+    eprint!("Port : ");
+    std::io::stdin().read_line(&mut port)?;
     // let url = format!(
     //     "mongodb+srv://user:{}@cluster.2qxtmxu.mongodb.net/?retryWrites=true&w=majority",
     //     std::env::var("PASSWORD").unwrap()
     // );
     let fishes = Fishes::connect().await?;
-    Fish::load(&fishes.collection).await?;
+    //Fish::load(&fishes.collection).await?;
     dotenv().ok();
     let mut app = tide::with_state(fishes);
     println!("New app made");
@@ -100,20 +104,18 @@ async fn main() -> tide::Result<()> {
     app.at("/cdn/:id").get(handle_image);
     app.at("/top/:n").get(Fishes::top);
     app.at("/new").get(Fishes::new);
-    app.listen("127.0.0.1:8080").await.unwrap();
+
+    println!("Listening on port {}", port);
+    app.listen("127.0.0.1:8080").await?;
     Ok(())
 }
 async fn handle_image(req: Request<Fishes>) -> tide::Result {
-    let id = req.param("id").unwrap();
+    let id = req.param("id")?;
     match std::path::Path::new(&format!("./images/{id}.jpg")).exists() {
-        false => Ok("Not found".into()),
-        _ => {
+        false => Ok(tide::Response::new(tide::StatusCode::NotFound).into()),
+        true => {
             let mut res = tide::Response::new(tide::StatusCode::Ok);
-            res.set_body(
-                tide::Body::from_file(format!("./images/{id}.jpg"))
-                    .await
-                    .unwrap(),
-            );
+            res.set_body(tide::Body::from_file(format!("./images/{id}.jpg")).await?);
             Ok(res.into())
         }
     }
