@@ -1,6 +1,5 @@
 mod fish;
 use async_std::stream::StreamExt;
-use dotenv::dotenv;
 use fish::Fish;
 use mongodb::bson::{from_document, Document};
 use mongodb::options::FindOptions;
@@ -24,13 +23,19 @@ impl Fishes {
         })
     }
     pub async fn fish_update(mut req: Request<Fishes>) -> tide::Result {
-        let update: FishUpdate = req.body_json().await.unwrap();
+        let update: FishUpdate = match req.body_json::<FishUpdate>().await {
+            Ok(o) => o,
+            Err(e) => return Ok(e.into()),
+        };
         let status = match req
             .state()
             .collection
             .find_one_and_update(
                 doc! {
-                    "id" : req.param("id").unwrap().parse::<u32>().unwrap()
+                    "id" : match req.param("id").unwrap_or_default().parse::<u32>(){
+                        Ok(id) => id,
+                        Err(_) => return Ok(tide::Response::new(StatusCode::UnprocessableEntity).into()),
+                    }
                 },
                 doc! {
                     "$inc" : {
@@ -60,6 +65,7 @@ impl Fishes {
         Ok(serde_json::to_string(&fish)?.into())
     }
     async fn top(req: Request<Fishes>) -> tide::Result {
+        println!("Getting top shit");
         let r = req
             .state()
             .collection
@@ -67,7 +73,7 @@ impl Fishes {
                 None,
                 FindOptions::builder()
                     .sort(doc! {"rating" : -1})
-                    .limit(req.param("n").unwrap().parse::<i64>().unwrap())
+                    .limit(req.param("n").unwrap_or_default().parse::<i64>().unwrap())
                     .build(),
             )
             .await?
@@ -86,16 +92,12 @@ struct FishUpdate {
 }
 #[tokio::main]
 async fn main() -> tide::Result<()> {
-    let mut port = String::new();
-    eprint!("Port : ");
-    std::io::stdin().read_line(&mut port)?;
     // let url = format!(
     //     "mongodb+srv://user:{}@cluster.2qxtmxu.mongodb.net/?retryWrites=true&w=majority",
     //     std::env::var("PASSWORD").unwrap()
     // );
     let fishes = Fishes::connect().await?;
-    //Fish::load(&fishes.collection).await?;
-    dotenv().ok();
+    Fish::load(&fishes.collection).await?;
     let mut app = tide::with_state(fishes);
     println!("New app made");
 
@@ -105,7 +107,6 @@ async fn main() -> tide::Result<()> {
     app.at("/top/:n").get(Fishes::top);
     app.at("/new").get(Fishes::new);
 
-    println!("Listening on port {}", port);
     app.listen("127.0.0.1:8080").await?;
     Ok(())
 }
