@@ -22,10 +22,8 @@ const App = () => {
   );
 };
 
-
-ReactDOM.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-  document.getElementById("root")
-);
+const domNode = document.getElementById('root');
+if (domNode != null) {
+  const root = createRoot(domNode);
+  root.render(<App />)
+}

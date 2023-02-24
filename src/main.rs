@@ -3,8 +3,10 @@ use async_std::stream::StreamExt;
 use dotenv::dotenv;
 use fish::Fish;
 use mongodb::bson::{from_document, Document};
+use mongodb::options::FindOptions;
 use mongodb::{bson::doc, Client};
 use tide::prelude::*;
+use tide::security::CorsMiddleware;
 use tide::Request;
 use tokio;
 #[derive(Clone)]
@@ -23,6 +25,7 @@ impl Fishes {
         })
     }
     pub async fn fish_update(mut req: Request<Fishes>) -> tide::Result {
+        println!("Updating fish");
         let update: FishUpdate = req.body_json().await.unwrap();
         req.state()
             .collection
@@ -54,6 +57,27 @@ impl Fishes {
         let fish: Fish = from_document(x[0].clone().unwrap()).unwrap();
         Ok(serde_json::to_string(&fish).unwrap().into())
     }
+    async fn top(req: Request<Fishes>) -> tide::Result {
+        let r = req
+            .state()
+            .collection
+            .find(
+                None,
+                FindOptions::builder()
+                    .sort(doc! {"rating" : -1})
+                    .limit(req.param("n").unwrap().parse::<i64>().unwrap())
+                    .build(),
+            )
+            .await
+            .unwrap()
+            .collect::<Vec<Result<_, mongodb::error::Error>>>()
+            .await;
+        let fishes: Vec<Fish> = r
+            .iter()
+            .map(|f| from_document(f.clone().unwrap()).unwrap())
+            .collect();
+        Ok(serde_json::to_string(&fishes).unwrap().into())
+    }
 }
 #[derive(Serialize, Deserialize, Debug)]
 struct FishUpdate {
@@ -66,13 +90,15 @@ async fn main() -> tide::Result<()> {
     //     std::env::var("PASSWORD").unwrap()
     // );
     let fishes = Fishes::connect().await?;
-    // Fish::grr(&fishes.collection).await?;
+    Fish::load(&fishes.collection).await?;
     dotenv().ok();
     let mut app = tide::with_state(fishes);
     println!("New app made");
 
+    app.with(CorsMiddleware::new());
     app.at("/update/:id").post(Fishes::fish_update);
     app.at("/cdn/:id").get(handle_image);
+    app.at("/top/:n").get(Fishes::top);
     app.at("/new").get(Fishes::new);
     app.listen("127.0.0.1:8080").await.unwrap();
     Ok(())

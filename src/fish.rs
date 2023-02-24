@@ -11,7 +11,7 @@ pub struct Fish {
     pub name: String,
 }
 impl Fish {
-    pub async fn grr(collection: &mongodb::Collection<Document>) -> std::io::Result<()> {
+    pub async fn load(collection: &mongodb::Collection<Document>) -> std::io::Result<()> {
         let names: Vec<String> = std::fs::read_to_string("names.txt")
             .unwrap()
             .split("\n")
@@ -29,7 +29,7 @@ impl Fish {
                     doc! {
                         "id" : i as u32,
                         "rating" : 100,
-                        "name" : &names[rand::thread_rng().gen_range(0..names.len())],
+                        "name" : names[rand::thread_rng().gen_range(0..names.len())].to_owned() +  " " + &names[rand::thread_rng().gen_range(0..names.len())],
                     },
                     None,
                 )
