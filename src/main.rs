@@ -16,10 +16,13 @@ struct Fishes {
 impl Fishes {
     pub async fn connect() -> Result<Self, mongodb::error::Error> {
         Ok(Fishes {
-            collection: Client::with_uri_str("mongodb://localhost:27017")
-                .await?
-                .database("fish")
-                .collection::<Document>("fish"),
+            collection: Client::with_uri_str(format!(
+                "mongodb+srv://user:{}@cluster.2qxtmxu.mongodb.net/?retryWrites=true&w=majority",
+                std::env::var("PASSWORD").unwrap()
+            ))
+            .await?
+            .database("cluster")
+            .collection::<Document>("fish"),
         })
     }
     pub async fn fish_update(mut req: Request<Fishes>) -> tide::Result {
@@ -65,7 +68,6 @@ impl Fishes {
         Ok(serde_json::to_string(&fish)?.into())
     }
     async fn top(req: Request<Fishes>) -> tide::Result {
-        println!("Getting top shit");
         let r = req
             .state()
             .collection
@@ -79,11 +81,12 @@ impl Fishes {
             .await?
             .collect::<Vec<Result<_, mongodb::error::Error>>>()
             .await;
-        let fishes: Vec<Fish> = r
-            .iter()
-            .map(|f| from_document(f.clone().unwrap()).unwrap())
-            .collect();
-        Ok(serde_json::to_string(&fishes)?.into())
+        Ok(serde_json::to_string(
+            &r.iter()
+                .map(|f| from_document(f.clone().unwrap()).unwrap())
+                .collect::<Vec<Fish>>(),
+        )?
+        .into())
     }
 }
 #[derive(Serialize, Deserialize, Debug)]
@@ -92,6 +95,7 @@ struct FishUpdate {
 }
 #[tokio::main]
 async fn main() -> tide::Result<()> {
+    dotenv::dotenv().ok();
     // let url = format!(
     //     "mongodb+srv://user:{}@cluster.2qxtmxu.mongodb.net/?retryWrites=true&w=majority",
     //     std::env::var("PASSWORD").unwrap()

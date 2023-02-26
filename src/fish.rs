@@ -1,4 +1,5 @@
 use mongodb::bson::doc;
+use mongodb::bson::document;
 use mongodb::bson::Document;
 use rand;
 use rand::Rng;
@@ -18,8 +19,9 @@ impl Fish {
             .collect();
         collection.delete_many(doc! {}, None).await.unwrap();
         std::fs::create_dir("./images/temp")?;
-        for (i, img) in std::fs::read_dir("./images").unwrap().skip(1).enumerate() {
-            match img.as_ref().unwrap().file_type().unwrap().is_dir() {
+        let mut documents: Vec<Document> = vec![];
+        for (i, img) in std::fs::read_dir("./images")?.skip(1).enumerate() {
+            match img.as_ref().unwrap().file_type()?.is_dir() {
                 true => continue,
                 false => {
                     std::fs::rename(
@@ -27,24 +29,19 @@ impl Fish {
                         format!("./images/temp/{i}.jpg"),
                     )?;
                     let rnd = || return rand::thread_rng().gen_range(0..names.len());
-                    collection
-                        .insert_one(
-                            doc! {
-                                "id" : i as u32,
-                                "rating" : 100,
-                                "name" : format!("{} {}" , names[rnd()] , names[rnd()]),
-                            },
-                            None,
-                        )
-                        .await
-                        .unwrap();
+                    documents.push(doc! {
+                        "id" : i as u32,
+                        "rating" : 100,
+                        "name" : format!("{} {}" , names[rnd()] , names[rnd()]),
+                    });
                 }
             }
         }
-        for n in std::fs::read_dir("./images/temp").unwrap() {
+        collection.insert_many(documents, None).await.unwrap();
+        for n in std::fs::read_dir("./images/temp")? {
             std::fs::copy(
                 &n.as_ref().unwrap().path(),
-                format!("./images/{}", &n.unwrap().file_name().to_str().unwrap()),
+                format!("./images/{}", &n?.file_name().to_str().unwrap()),
             )?;
         }
         std::fs::remove_dir_all("./images/temp")?;
